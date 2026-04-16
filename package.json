@@ -1,0 +1,22 @@
+{
+  "name": "paylocity",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RMOCC/paylocity.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RMOCC/paylocity/issues"
+  },
+  "homepage": "https://github.com/RMOCC/paylocity#readme",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0"
+  }
+}
