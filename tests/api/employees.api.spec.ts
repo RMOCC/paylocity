@@ -1,0 +1,189 @@
+import { test, expect } from '@playwright/test';
+import { CREDENTIALS, BASE_URL, BENEFITS, calculateBenefitsCost, calculateNet } from '../helpers/constants';
+
+const API_URL = `${BASE_URL}/api/Employees`;
+
+const headers = {
+  'Authorization': CREDENTIALS.authHeader,
+  'Content-Type': 'application/json',
+};
+
+async function createEmployee(request: any, overrides: Record<string, unknown> = {}) {
+  return request.post(API_URL, {
+    headers,
+    data: { firstName: 'Petr', lastName: 'Novotny', dependants: 0, username: CREDENTIALS.username, ...overrides },
+  });
+}
+
+async function deleteEmployee(request: any, id: string) {
+  return request.delete(`${API_URL}/${id}`, { headers });
+}
+
+test.describe('Authentication', () => {
+  test('missing auth header returns 401', async ({ request }) => {
+    expect((await request.get(API_URL)).status()).toBe(401);
+  });
+
+  test('invalid auth token returns 401', async ({ request }) => {
+    expect((await request.get(API_URL, { headers: { Authorization: 'Basic InvalidToken' } })).status()).toBe(401);
+  });
+
+  test('valid auth returns 200', async ({ request }) => {
+    expect((await request.get(API_URL, { headers })).status()).toBe(200);
+  });
+});
+
+test.describe('GET /api/Employees', () => {
+  test('returns array of employees', async ({ request }) => {
+    const res = await request.get(API_URL, { headers });
+    expect(res.status()).toBe(200);
+    expect(Array.isArray(await res.json())).toBeTruthy();
+  });
+
+  test('employees have required fields', async ({ request }) => {
+    const employees = await (await request.get(API_URL, { headers })).json();
+    if (employees.length === 0) test.skip();
+    expect(employees[0]).toMatchObject({
+      id: expect.anything(),
+      firstName: expect.anything(),
+      lastName: expect.anything(),
+      dependants: expect.anything(),
+      salary: expect.anything(),
+      gross: expect.anything(),
+      benefitsCost: expect.anything(),
+      net: expect.anything(),
+    });
+  });
+});
+
+test.describe('GET /api/Employees/:id', () => {
+  let id: string;
+  test.beforeAll(async ({ request }) => {
+    id = (await (await createEmployee(request, { firstName: 'GetById', lastName: 'Test' })).json()).id;
+  });
+  test.afterAll(async ({ request }) => { await deleteEmployee(request, id); });
+
+  test('returns employee by valid id', async ({ request }) => {
+    const body = await (await request.get(`${API_URL}/${id}`, { headers })).json();
+    expect(body).toMatchObject({ id, firstName: 'GetById' });
+  });
+
+  test('returns 404 for unknown id', async ({ request }) => {
+    const res = await request.get(`${API_URL}/00000000-0000-0000-0000-000000000000`, { headers });
+    expect(res.status()).toBe(404);
+  });
+
+  test('returns 400 for malformed id', async ({ request }) => {
+    const res = await request.get(`${API_URL}/not-a-uuid`, { headers });
+    expect([400, 404]).toContain(res.status());
+  });
+});
+
+test.describe('POST /api/Employees', () => {
+  const cleanup: string[] = [];
+  test.afterAll(async ({ request }) => {
+    await Promise.all(cleanup.map(id => deleteEmployee(request, id)));
+  });
+
+  async function create(request: any, overrides: Record<string, unknown> = {}) {
+    const res = await createEmployee(request, overrides);
+    const body = await res.json();
+    if (body.id) cleanup.push(body.id);
+    return { res, body };
+  }
+
+  test('creates employee and returns data', async ({ request }) => {
+    const { res, body } = await create(request, { firstName: 'New', lastName: 'Emp', dependants: 2 });
+    expect(res.status()).toBe(200);
+    expect(body).toMatchObject({ firstName: 'New', lastName: 'Emp', dependants: 2 });
+  });
+
+  test('salary is $2000 per paycheck', async ({ request }) => {
+    const { body } = await create(request);
+    expect(body.salary).toBeCloseTo(BENEFITS.salaryPerPaycheck, 2);
+  });
+
+  test('calculates benefits cost for 0 dependants', async ({ request }) => {
+    const { body } = await create(request, { dependants: 0 });
+    expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(0), 2);
+  });
+
+  test('calculates benefits cost for 2 dependants', async ({ request }) => {
+    const { body } = await create(request, { dependants: 2 });
+    expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(2), 2);
+  });
+
+  test('calculates net pay correctly', async ({ request }) => {
+    const { body } = await create(request, { dependants: 3 });
+    expect(body.net).toBeCloseTo(calculateNet(3), 2);
+  });
+
+  test('returns 400 when firstName missing', async ({ request }) => {
+    const res = await request.post(API_URL, { headers, data: { lastName: 'X', dependants: 0, username: CREDENTIALS.username } });
+    expect(res.status()).toBe(400);
+  });
+
+  test('returns 400 when lastName missing', async ({ request }) => {
+    const res = await request.post(API_URL, { headers, data: { firstName: 'X', dependants: 0, username: CREDENTIALS.username } });
+    expect(res.status()).toBe(400);
+  });
+
+  test('accepts 32 dependants (max)', async ({ request }) => {
+    const { res } = await create(request, { dependants: 32 });
+    expect(res.status()).toBe(200);
+  });
+
+  test('rejects 33 dependants', async ({ request }) => {
+    expect((await createEmployee(request, { dependants: 33 })).status()).toBe(400);
+  });
+
+  test('rejects negative dependants', async ({ request }) => {
+    expect((await createEmployee(request, { dependants: -1 })).status()).toBe(400);
+  });
+
+  test('rejects firstName longer than 50 chars', async ({ request }) => {
+    expect((await createEmployee(request, { firstName: 'A'.repeat(51) })).status()).toBe(400);
+  });
+
+  test('rejects lastName longer than 50 chars', async ({ request }) => {
+    expect((await createEmployee(request, { lastName: 'B'.repeat(51) })).status()).toBe(400);
+  });
+});
+
+test.describe('PUT /api/Employees', () => {
+  let employee: any;
+  test.beforeAll(async ({ request }) => {
+    employee = await (await createEmployee(request, { firstName: 'Update', lastName: 'Me', dependants: 0 })).json();
+  });
+  test.afterAll(async ({ request }) => { await deleteEmployee(request, employee.id); });
+
+  test('updates first name', async ({ request }) => {
+    const res = await request.put(API_URL, { headers, data: { ...employee, firstName: 'Updated' } });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).firstName).toBe('Updated');
+  });
+
+  test('recalculates benefits after dependant change', async ({ request }) => {
+    const res = await request.put(API_URL, { headers, data: { ...employee, dependants: 4 } });
+    const body = await res.json();
+    expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(4), 2);
+    expect(body.net).toBeCloseTo(calculateNet(4), 2);
+  });
+
+  test('returns 400 for invalid dependants', async ({ request }) => {
+    const res = await request.put(API_URL, { headers, data: { ...employee, dependants: 99 } });
+    expect(res.status()).toBe(400);
+  });
+});
+
+test.describe('DELETE /api/Employees/:id', () => {
+  test('deletes employee and returns 404 after', async ({ request }) => {
+    const { id } = await (await createEmployee(request, { firstName: 'Del', lastName: 'Me' })).json();
+    expect((await deleteEmployee(request, id)).status()).toBe(200);
+    expect((await request.get(`${API_URL}/${id}`, { headers })).status()).toBe(404);
+  });
+
+  test('returns 404 for unknown id', async ({ request }) => {
+    expect((await deleteEmployee(request, '00000000-0000-0000-0000-000000000001')).status()).toBe(404);
+  });
+});
