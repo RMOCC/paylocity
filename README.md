@@ -1,58 +1,174 @@
+
 # Paylocity Benefits Dashboard — Test Automation
 
 Playwright + TypeScript test suite for the Paylocity Benefits Dashboard.  
-Target: `https://wmxrwq14uc.execute-api.us-east-1.amazonaws.com/Prod`
+Target: https://wmxrwq14uc.execute-api.us-east-1.amazonaws.com/Prod
+
+---
 
 ## Setup & running
 
-```bash
-npm install
-npx playwright install chromium
-```
+npm install  
+npx playwright install chromium  
 
-```bash
-npx playwright test                          # all tests
-npx playwright test tests/e2e/               # UI only
-npx playwright test tests/api/               # API only
-npx playwright test tests/e2e/login.spec.ts  # single file
-npx playwright test tests/e2e/ --headed      # with visible browser
-npx playwright show-report                   # open HTML report
-```
+npx playwright test                          # all tests  
+npx playwright test tests/e2e/               # UI only  
+npx playwright test tests/api/               # API only  
+npx playwright test tests/e2e/login.spec.ts  # single file  
+npx playwright test tests/e2e/ --headed      # with visible browser  
+npx playwright show-report                   # open HTML report  
+
+---
 
 ## What is tested and why
 
-### UI (`tests/e2e/`)
+### UI (tests/e2e/)
 
-**Login** — covers the only entry point to the app: valid credentials redirect to dashboard, invalid username/password/empty fields show an error, password field is masked, unauthenticated access to `/Benefits` redirects to login.
+⚠️ UI application currently returns "Forbidden", therefore UI tests are intentionally skipped.
 
-**Add employee** — modal opens on button click, new employee appears in the table with an incremented count, benefits calculation is correct (salary / benefitsCost / net), empty firstName or lastName prevents submission, dependants > 32 are rejected.
+Login — covers entry point: valid credentials redirect to dashboard, invalid/empty credentials show error, password is masked, unauthenticated access redirects to login.
 
-**Edit employee** — firstName change is persisted, changing dependants recalculates benefitsCost in the table.
+Add employee — modal behavior, table update, correct calculations, validation of required fields and dependants limit.
 
-**Delete employee** — row is removed and count decrements, cancelling the confirmation dialog keeps the employee.
+Edit employee — verifies update persistence and recalculation.
 
-### API (`tests/api/`)
+Delete employee — verifies removal and cancel behavior.
 
-**Auth** — 401 without header, 401 with invalid token, 200 with valid header. All endpoints share the same auth mechanism so testing one is enough.
+---
 
-**GET /api/Employees** — returns a 200 array, each item has the required fields (id, firstName, lastName, dependants, salary, gross, benefitsCost, net).
+### API (tests/api/)
 
-**GET /api/Employees/:id** — found by valid ID, 404 for unknown UUID, 400/404 for malformed ID.
+Auth — verifies behavior for missing, invalid, and valid tokens.
 
-**POST /api/Employees** — creates employee and echoes fields back, salary/benefitsCost/net are calculated correctly (0, 2, 3 dependants), missing firstName or lastName returns 400, dependants boundary: 32 accepted, 33 and −1 rejected, name longer than 50 chars returns 400.
+GET /api/Employees — validates response structure and required fields.
 
-**PUT /api/Employees** — firstName update persisted, benefits recalculated after dependants change, invalid dependants return 400.
+GET /api/Employees/:id — verifies retrieval, unknown ID handling, and malformed input handling.
 
-**DELETE /api/Employees/:id** — deletes employee and subsequent GET returns 404, 404 for unknown ID.
+POST /api/Employees — validates creation, business logic calculations, boundary values, and invalid inputs.
+
+PUT /api/Employees — verifies updates and recalculations.
+
+DELETE /api/Employees/:id — verifies deletion behavior and unknown ID handling.
+
+---
+
+## Known Issues (Detected Bugs)
+
+### Authentication is not enforced  
+Severity: Critical  
+
+Steps to reproduce:  
+1. Send GET request to /api/Employees without Authorization header  
+
+Expected:  
+401 Unauthorized  
+
+Actual:  
+200 OK with full data  
+
+Impact:  
+Unauthorized access to sensitive employee data  
+
+---
+
+### Salary and Gross values are swapped  
+Severity: High  
+
+Steps to reproduce:  
+1. Create employee via POST /api/Employees  
+2. Inspect response  
+
+Expected:  
+salary = 2000 (per paycheck)  
+gross = 52000 (annual)  
+
+Actual:  
+salary = 52000  
+gross = 2000  
+
+Impact:  
+Incorrect financial calculations and misleading data  
+
+---
+
+### DELETE does not consistently remove employee  
+Severity: High  
+
+Steps to reproduce:  
+1. Create employee  
+2. Delete employee  
+3. Fetch employee by ID  
+
+Expected:  
+404 Not Found  
+
+Actual:  
+200 OK (employee still exists in some cases)  
+
+Impact:  
+Data inconsistency and potential payroll errors  
+
+---
+
+### Invalid ID returns 500 instead of client error  
+Severity: Medium  
+
+Steps to reproduce:  
+1. Call GET /api/Employees/not-a-uuid  
+
+Expected:  
+400 or 404  
+
+Actual:  
+500 Internal Server Error  
+
+Impact:  
+Missing input validation and server instability  
+
+---
+
+### Invalid dependants type is not validated correctly  
+Severity: Medium  
+
+Steps to reproduce:  
+1. Send POST with dependants = 1.5  
+
+Expected:  
+400 Bad Request  
+
+Actual:  
+405 Method Not Allowed  
+
+Impact:  
+Inconsistent validation logic  
+
+---
+
+### DELETE unknown ID returns 200  
+Severity: Medium  
+
+Steps to reproduce:  
+1. Delete non-existent employee ID  
+
+Expected:  
+404 Not Found  
+
+Actual:  
+200 OK  
+
+Impact:  
+API contract inconsistency  
+
+---
 
 ## What was consciously not tested
 
-| Area | What | Why |
-|------|------|-----|
-| UI | lastName edit | Follows the same code path as firstName; covered implicitly |
-| UI | Error message wording | Wording is a copy/UX decision, not a functional contract |
-| UI | Field length limits | Covered exhaustively at API level; duplicating in UI adds noise |
-| UI | `gross` field value | It is `salary × 26`, a display aggregation; the underlying salary and net are verified |
-| UI | Cross-browser | No browser-specific features in this app; Chromium is sufficient |
-| API | PUT with non-existent ID | Undocumented behavior (404 or upsert?); asserting an undefined contract would be brittle |
-| API | 400 response body content | Error message format is not part of the tested contract; status code is enough |
+UI — lastName edit → same logic as firstName  
+UI — error message wording → UX concern  
+UI — field length limits → covered at API level  
+UI — gross field → derived value (salary × 26)  
+UI — cross-browser → no browser-specific behavior  
+
+API — PUT non-existent ID → undefined contract  
+API — error response body → status code sufficient  
+```
