@@ -13,9 +13,9 @@ export class EmployeeModal {
   readonly dependantsInput: Locator;
 
   constructor(private page: Page) {
-    this.modal          = page.locator('#employeeModal');
-    this.firstNameInput = page.locator('#firstName');
-    this.lastNameInput  = page.locator('#lastName');
+    this.modal           = page.locator('#employeeModal');
+    this.firstNameInput  = page.locator('#firstName');
+    this.lastNameInput   = page.locator('#lastName');
     this.dependantsInput = page.locator('#dependants');
   }
 
@@ -37,9 +37,9 @@ export class EmployeeModal {
     await this.page.locator('#addEmployee').click();
   }
 
+  // Fills and clicks save. Does NOT wait for close — call waitForClose() explicitly on success paths.
   async submit(data: EmployeeData) {
     await this.fill(data);
     await this.save();
-    await this.waitForClose();
   }
 }

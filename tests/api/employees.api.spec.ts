@@ -1,23 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { CREDENTIALS, BASE_URL, BENEFITS, calculateBenefitsCost, calculateNet } from '../helpers/constants';
-
-const API_URL = `${BASE_URL}/api/Employees`;
-
-const headers = {
-  'Authorization': CREDENTIALS.authHeader,
-  'Content-Type': 'application/json',
-};
-
-async function createEmployee(request: any, overrides: Record<string, unknown> = {}) {
-  return request.post(API_URL, {
-    headers,
-    data: { firstName: 'Petr', lastName: 'Novotny', dependants: 0, username: CREDENTIALS.username, ...overrides },
-  });
-}
-
-async function deleteEmployee(request: any, id: string) {
-  return request.delete(`${API_URL}/${id}`, { headers });
-}
+import { BENEFITS, calculateBenefitsCost, calculateNet } from '../helpers/constants';
+import { createEmployee, deleteEmployee, authHeaders, API_URL } from '../helpers/api';
 
 test.describe('Authentication', () => {
   test('missing auth header returns 401', async ({ request }) => {
@@ -29,19 +12,19 @@ test.describe('Authentication', () => {
   });
 
   test('valid auth returns 200', async ({ request }) => {
-    expect((await request.get(API_URL, { headers })).status()).toBe(200);
+    expect((await request.get(API_URL, { headers: authHeaders })).status()).toBe(200);
   });
 });
 
 test.describe('GET /api/Employees', () => {
   test('returns array of employees', async ({ request }) => {
-    const res = await request.get(API_URL, { headers });
+    const res = await request.get(API_URL, { headers: authHeaders });
     expect(res.status()).toBe(200);
     expect(Array.isArray(await res.json())).toBeTruthy();
   });
 
   test('employees have required fields', async ({ request }) => {
-    const employees = await (await request.get(API_URL, { headers })).json();
+    const employees = await (await request.get(API_URL, { headers: authHeaders })).json();
     if (employees.length === 0) test.skip();
     expect(employees[0]).toMatchObject({
       id: expect.anything(),
@@ -64,17 +47,17 @@ test.describe('GET /api/Employees/:id', () => {
   test.afterAll(async ({ request }) => { await deleteEmployee(request, id); });
 
   test('returns employee by valid id', async ({ request }) => {
-    const body = await (await request.get(`${API_URL}/${id}`, { headers })).json();
+    const body = await (await request.get(`${API_URL}/${id}`, { headers: authHeaders })).json();
     expect(body).toMatchObject({ id, firstName: 'GetById' });
   });
 
   test('returns 404 for unknown id', async ({ request }) => {
-    const res = await request.get(`${API_URL}/00000000-0000-0000-0000-000000000000`, { headers });
+    const res = await request.get(`${API_URL}/00000000-0000-0000-0000-000000000000`, { headers: authHeaders });
     expect(res.status()).toBe(404);
   });
 
   test('returns 400 for malformed id', async ({ request }) => {
-    const res = await request.get(`${API_URL}/not-a-uuid`, { headers });
+    const res = await request.get(`${API_URL}/not-a-uuid`, { headers: authHeaders });
     expect([400, 404]).toContain(res.status());
   });
 });
@@ -119,12 +102,12 @@ test.describe('POST /api/Employees', () => {
   });
 
   test('returns 400 when firstName missing', async ({ request }) => {
-    const res = await request.post(API_URL, { headers, data: { lastName: 'X', dependants: 0, username: CREDENTIALS.username } });
+    const res = await createEmployee(request, { firstName: undefined, lastName: 'X', dependants: 0 });
     expect(res.status()).toBe(400);
   });
 
   test('returns 400 when lastName missing', async ({ request }) => {
-    const res = await request.post(API_URL, { headers, data: { firstName: 'X', dependants: 0, username: CREDENTIALS.username } });
+    const res = await createEmployee(request, { lastName: undefined, firstName: 'X', dependants: 0 });
     expect(res.status()).toBe(400);
   });
 
@@ -158,20 +141,20 @@ test.describe('PUT /api/Employees', () => {
   test.afterAll(async ({ request }) => { await deleteEmployee(request, employee.id); });
 
   test('updates first name', async ({ request }) => {
-    const res = await request.put(API_URL, { headers, data: { ...employee, firstName: 'Updated' } });
+    const res = await request.put(API_URL, { headers: authHeaders, data: { ...employee, firstName: 'Updated' } });
     expect(res.status()).toBe(200);
     expect((await res.json()).firstName).toBe('Updated');
   });
 
   test('recalculates benefits after dependant change', async ({ request }) => {
-    const res = await request.put(API_URL, { headers, data: { ...employee, dependants: 4 } });
+    const res = await request.put(API_URL, { headers: authHeaders, data: { ...employee, dependants: 4 } });
     const body = await res.json();
     expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(4), 2);
     expect(body.net).toBeCloseTo(calculateNet(4), 2);
   });
 
   test('returns 400 for invalid dependants', async ({ request }) => {
-    const res = await request.put(API_URL, { headers, data: { ...employee, dependants: 99 } });
+    const res = await request.put(API_URL, { headers: authHeaders, data: { ...employee, dependants: 99 } });
     expect(res.status()).toBe(400);
   });
 });
@@ -180,7 +163,7 @@ test.describe('DELETE /api/Employees/:id', () => {
   test('deletes employee and returns 404 after', async ({ request }) => {
     const { id } = await (await createEmployee(request, { firstName: 'Del', lastName: 'Me' })).json();
     expect((await deleteEmployee(request, id)).status()).toBe(200);
-    expect((await request.get(`${API_URL}/${id}`, { headers })).status()).toBe(404);
+    expect((await request.get(`${API_URL}/${id}`, { headers: authHeaders })).status()).toBe(404);
   });
 
   test('returns 404 for unknown id', async ({ request }) => {

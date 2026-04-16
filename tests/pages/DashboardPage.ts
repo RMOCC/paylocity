@@ -1,5 +1,7 @@
 import { Page, Locator } from '@playwright/test';
 
+const Col = { salary: 4, gross: 5, benefitsCost: 6, net: 7 } as const;
+
 export class DashboardPage {
   readonly employeeRows: Locator;
 
@@ -13,6 +15,10 @@ export class DashboardPage {
 
   async addEmployeeCount(): Promise<number> {
     return this.employeeRows.count();
+  }
+
+  async employeeExists(firstName: string, lastName: string): Promise<boolean> {
+    return (await this.rowFor(firstName, lastName).count()) > 0;
   }
 
   async openAddModal() {
@@ -34,9 +40,9 @@ export class DashboardPage {
   async getEmployeeData(firstName: string, lastName: string) {
     const cells = this.rowFor(firstName, lastName).locator('td');
     return {
-      salary:       await cells.nth(4).textContent(),
-      benefitsCost: await cells.nth(6).textContent(),
-      net:          await cells.nth(7).textContent(),
+      salary:       await cells.nth(Col.salary).textContent(),
+      benefitsCost: await cells.nth(Col.benefitsCost).textContent(),
+      net:          await cells.nth(Col.net).textContent(),
     };
   }
 

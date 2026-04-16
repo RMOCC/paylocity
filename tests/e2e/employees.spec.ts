@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth.fixture';
 import { EmployeeModal } from '../pages/EmployeeModal';
-import { calculateBenefitsCost, calculateNet, BENEFITS } from '../helpers/constants';
+import { calculateBenefitsCost, calculateNet, BENEFITS, parseCurrency } from '../helpers/constants';
 
 const EMPLOYEE = { firstName: 'Jan', lastName: 'Novak', dependants: 2 };
 
@@ -9,23 +9,20 @@ function uniqueEmployee() {
   return { firstName: `Test${s}`, lastName: `User${s}`, dependants: 1 };
 }
 
-function parseCurrency(value: string | null): number {
-  return parseFloat(value!.replace(/[^0-9.]/g, ''));
-}
-
 test.describe('Add Employee', () => {
   test('opens modal on button click', async ({ authenticatedDashboard: dashboard, page }) => {
     await dashboard.openAddModal();
-    const modal = new EmployeeModal(page);
-    await expect(modal.modal).toBeVisible();
+    await expect(new EmployeeModal(page).modal).toBeVisible();
   });
 
   test('adds employee and updates table', async ({ authenticatedDashboard: dashboard, page }) => {
     const emp = uniqueEmployee();
     const before = await dashboard.addEmployeeCount();
+    const modal = new EmployeeModal(page);
 
     await dashboard.openAddModal();
-    await new EmployeeModal(page).submit(emp);
+    await modal.submit(emp);
+    await modal.waitForClose();
 
     await expect(page.locator('#employeesTable')).toContainText(emp.firstName);
     expect(await dashboard.addEmployeeCount()).toBe(before + 1);
@@ -35,8 +32,11 @@ test.describe('Add Employee', () => {
   });
 
   test('calculates benefits correctly', async ({ authenticatedDashboard: dashboard, page }) => {
+    const modal = new EmployeeModal(page);
+
     await dashboard.openAddModal();
-    await new EmployeeModal(page).submit(EMPLOYEE);
+    await modal.submit(EMPLOYEE);
+    await modal.waitForClose();
 
     const data = await dashboard.getEmployeeData(EMPLOYEE.firstName, EMPLOYEE.lastName);
     expect(parseCurrency(data.salary)).toBeCloseTo(BENEFITS.salaryPerPaycheck, 2);
@@ -70,32 +70,35 @@ test.describe('Add Employee', () => {
 
 test.describe('Edit Employee', () => {
   test.beforeEach(async ({ authenticatedDashboard: dashboard, page }) => {
+    const modal = new EmployeeModal(page);
     await dashboard.openAddModal();
-    await new EmployeeModal(page).submit(EMPLOYEE);
+    await modal.submit(EMPLOYEE);
+    await modal.waitForClose();
   });
 
-  test.afterEach(async ({ authenticatedDashboard: dashboard, page }) => {
+  test.afterEach(async ({ authenticatedDashboard: dashboard }) => {
     for (const firstName of [EMPLOYEE.firstName, 'Jane']) {
-      try {
+      if (await dashboard.employeeExists(firstName, EMPLOYEE.lastName)) {
         await dashboard.openDeleteModal(firstName, EMPLOYEE.lastName);
         await dashboard.confirmDelete();
-      } catch {}
+      }
     }
   });
 
   test('updates first name', async ({ authenticatedDashboard: dashboard, page }) => {
-    await dashboard.openEditModal(EMPLOYEE.firstName, EMPLOYEE.lastName);
     const modal = new EmployeeModal(page);
+    await dashboard.openEditModal(EMPLOYEE.firstName, EMPLOYEE.lastName);
     await modal.waitForOpen();
     await modal.firstNameInput.fill('Jane');
     await modal.save();
     await modal.waitForClose();
+
     await expect(page.locator('#employeesTable')).toContainText('Jane');
   });
 
   test('recalculates benefits after dependant change', async ({ authenticatedDashboard: dashboard, page }) => {
-    await dashboard.openEditModal(EMPLOYEE.firstName, EMPLOYEE.lastName);
     const modal = new EmployeeModal(page);
+    await dashboard.openEditModal(EMPLOYEE.firstName, EMPLOYEE.lastName);
     await modal.waitForOpen();
     await modal.dependantsInput.fill('3');
     await modal.save();
@@ -109,8 +112,11 @@ test.describe('Edit Employee', () => {
 test.describe('Delete Employee', () => {
   test('removes employee from table', async ({ authenticatedDashboard: dashboard, page }) => {
     const emp = uniqueEmployee();
+    const modal = new EmployeeModal(page);
+
     await dashboard.openAddModal();
-    await new EmployeeModal(page).submit(emp);
+    await modal.submit(emp);
+    await modal.waitForClose();
 
     const before = await dashboard.addEmployeeCount();
     await dashboard.openDeleteModal(emp.firstName, emp.lastName);
@@ -122,12 +128,15 @@ test.describe('Delete Employee', () => {
 
   test('confirmation dialog cancel keeps employee', async ({ authenticatedDashboard: dashboard, page }) => {
     const emp = uniqueEmployee();
+    const modal = new EmployeeModal(page);
+
     await dashboard.openAddModal();
-    await new EmployeeModal(page).submit(emp);
+    await modal.submit(emp);
+    await modal.waitForClose();
 
     await dashboard.openDeleteModal(emp.firstName, emp.lastName);
     await expect(page.locator('#deleteModal')).toBeVisible();
-    await page.locator('[data-dismiss="modal"]').last().click();
+    await page.locator('#deleteModal [data-dismiss="modal"]').click();
     await expect(page.locator('#employeesTable')).toContainText(emp.firstName);
 
     await dashboard.openDeleteModal(emp.firstName, emp.lastName);

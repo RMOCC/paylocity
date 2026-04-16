@@ -1,100 +1,58 @@
 # Paylocity Benefits Dashboard — Test Automation
 
-Playwright + TypeScript test suite covering UI and API testing for the Paylocity Benefits Dashboard application.
+Playwright + TypeScript test suite for the Paylocity Benefits Dashboard.  
+Target: `https://wmxrwq14uc.execute-api.us-east-1.amazonaws.com/Prod`
 
-## Prerequisites
-
-- Node.js 18+
-- npm
-
-## Setup
+## Setup & running
 
 ```bash
 npm install
 npx playwright install chromium
 ```
 
-## Running Tests
-
-### All tests
 ```bash
-npx playwright test
+npx playwright test                          # all tests
+npx playwright test tests/e2e/               # UI only
+npx playwright test tests/api/               # API only
+npx playwright test tests/e2e/login.spec.ts  # single file
+npx playwright test tests/e2e/ --headed      # with visible browser
+npx playwright show-report                   # open HTML report
 ```
 
-### UI tests only
-```bash
-npx playwright test tests/e2e/
-```
+## What is tested and why
 
-### API tests only
-```bash
-npx playwright test tests/api/
-```
+### UI (`tests/e2e/`)
 
-### Specific test file
-```bash
-npx playwright test tests/e2e/login.spec.ts
-```
+**Login** — covers the only entry point to the app: valid credentials redirect to dashboard, invalid username/password/empty fields show an error, password field is masked, unauthenticated access to `/Benefits` redirects to login.
 
-### With HTML report
-```bash
-npx playwright test --reporter=html
-npx playwright show-report
-```
+**Add employee** — modal opens on button click, new employee appears in the table with an incremented count, benefits calculation is correct (salary / benefitsCost / net), empty firstName or lastName prevents submission, dependants > 32 are rejected.
 
-### Headed mode (see the browser)
-```bash
-npx playwright test tests/e2e/ --headed
-```
+**Edit employee** — firstName change is persisted, changing dependants recalculates benefitsCost in the table.
 
-## Project Structure
+**Delete employee** — row is removed and count decrements, cancelling the confirmation dialog keeps the employee.
 
-```
-tests/
-├── api/
-│   └── employees.api.spec.ts   # API tests (GET, POST, PUT, DELETE)
-├── e2e/
-│   ├── login.spec.ts           # UI login tests
-│   └── employees.spec.ts       # UI employee CRUD tests
-├── fixtures/
-│   └── auth.fixture.ts         # Shared authenticated session fixture
-├── helpers/
-│   └── constants.ts            # Config, credentials, business logic helpers
-└── pages/
-    ├── LoginPage.ts             # Login page POM
-    ├── DashboardPage.ts         # Benefits dashboard POM
-    └── EmployeeModal.ts         # Add/Edit employee modal POM
-```
+### API (`tests/api/`)
 
-## Test Coverage
+**Auth** — 401 without header, 401 with invalid token, 200 with valid header. All endpoints share the same auth mechanism so testing one is enough.
 
-### UI Tests
-- **Login**: valid/invalid credentials, empty fields, password masking, redirect when unauthenticated
-- **Add Employee**: modal open, employee creation, benefits calculation, validation (empty fields, over-limit dependants)
-- **Edit Employee**: name change, recalculation after dependant update
-- **Delete Employee**: deletion flow, confirmation dialog, cancel behaviour
+**GET /api/Employees** — returns a 200 array, each item has the required fields (id, firstName, lastName, dependants, salary, gross, benefitsCost, net).
 
-### API Tests
-- **Authentication**: missing/invalid/valid auth header
-- **GET /api/Employees**: list all, field validation
-- **GET /api/Employees/{id}**: by valid ID, 404 for missing, 400 for invalid UUID
-- **POST /api/Employees**: create, salary/benefits/net calculation, validation (missing fields, dependant limits, max field lengths)
-- **PUT /api/Employees**: update name, recalculate after dependant change, validation
-- **DELETE /api/Employees/{id}**: delete existing, 404 for missing
+**GET /api/Employees/:id** — found by valid ID, 404 for unknown UUID, 400/404 for malformed ID.
 
-## Business Logic
+**POST /api/Employees** — creates employee and echoes fields back, salary/benefitsCost/net are calculated correctly (0, 2, 3 dependants), missing firstName or lastName returns 400, dependants boundary: 32 accepted, 33 and −1 rejected, name longer than 50 chars returns 400.
 
-| Rule | Value |
-|------|-------|
-| Salary per paycheck | $2,000 |
-| Paychecks per year | 26 |
-| Employee benefits cost/year | $1,000 |
-| Dependant cost/year | $500 |
-| Max dependants | 32 |
+**PUT /api/Employees** — firstName update persisted, benefits recalculated after dependants change, invalid dependants return 400.
 
-**Benefits cost per paycheck** = (1000 + dependants × 500) / 26  
-**Net pay** = 2000 − benefits cost per paycheck
+**DELETE /api/Employees/:id** — deletes employee and subsequent GET returns 404, 404 for unknown ID.
 
-## Application URL
+## What was consciously not tested
 
-`https://wmxrwq14uc.execute-api.us-east-1.amazonaws.com/Prod`
+| Area | What | Why |
+|------|------|-----|
+| UI | lastName edit | Follows the same code path as firstName; covered implicitly |
+| UI | Error message wording | Wording is a copy/UX decision, not a functional contract |
+| UI | Field length limits | Covered exhaustively at API level; duplicating in UI adds noise |
+| UI | `gross` field value | It is `salary × 26`, a display aggregation; the underlying salary and net are verified |
+| UI | Cross-browser | No browser-specific features in this app; Chromium is sufficient |
+| API | PUT with non-existent ID | Undocumented behavior (404 or upsert?); asserting an undefined contract would be brittle |
+| API | 400 response body content | Error message format is not part of the tested contract; status code is enough |

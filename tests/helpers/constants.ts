@@ -20,3 +20,7 @@ export function calculateBenefitsCost(dependants: number): number {
 export function calculateNet(dependants: number): number {
   return BENEFITS.salaryPerPaycheck - calculateBenefitsCost(dependants);
 }
+
+export function parseCurrency(value: string | null): number {
+  return parseFloat(value!.replace(/[^0-9.]/g, ''));
+}
