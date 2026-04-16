@@ -1,11 +1,36 @@
 import { test, expect } from '../fixtures/auth.fixture';
 import { EmployeeModal } from '../pages/EmployeeModal';
-import { calculateBenefitsCost } from '../helpers/constants';
+import { calculateBenefitsCost, parseCurrency } from '../helpers/constants';
 import { createEmployee, deleteEmployee, authHeaders, API_URL } from '../helpers/api';
 
 function unique(prefix: string) {
   return `${prefix}${Date.now()}`;
 }
+
+test('API-created employee with 3 dependants shows correct payroll breakdown in dashboard', async ({
+  authenticatedDashboard: dashboard,
+  page,
+  request,
+}) => {
+  const s = Date.now();
+  const employee = await (await createEmployee(request, {
+    firstName: `Jan${s}`,
+    lastName:  `Novak${s}`,
+    dependants: 3,
+  })).json();
+
+  await dashboard.goto();
+
+  const data = await dashboard.getEmployeeData(employee.firstName, employee.lastName);
+
+  const annualBenefits = 1000 + 3 * 500;                                        // $2,500
+  expect(parseCurrency(data.salary)).toBeCloseTo(2000, 2);                       // per paycheck
+  expect(parseCurrency(data.gross)).toBeCloseTo(2000 * 26, 2);                   // $52,000 annual
+  expect(parseCurrency(data.benefitsCost)).toBeCloseTo(annualBenefits / 26, 2);  // ≈ $96.15 per paycheck
+  expect(parseCurrency(data.net)).toBeCloseTo(2000 - annualBenefits / 26, 2);    // ≈ $1,903.85
+
+  await deleteEmployee(request, employee.id);
+});
 
 test('employee created via API appears in dashboard', async ({ authenticatedDashboard: dashboard, page, request }) => {
   const firstName = unique('Api');

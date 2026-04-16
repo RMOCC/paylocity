@@ -187,6 +187,34 @@ test.describe('PUT /api/Employees', () => {
   });
 });
 
+test.describe('Business logic — full payroll calculation', () => {
+  let id: string;
+  test.afterAll(async ({ request }) => { await deleteEmployee(request, id); });
+
+  test('employee with 3 dependants: annual cost breaks down correctly into per-paycheck deduction', async ({ request }) => {
+    const res = await createEmployee(request, { firstName: 'Business', lastName: 'Logic', dependants: 3 });
+    const body = await res.json();
+    id = body.id;
+
+    // Annual gross: $2,000 per paycheck × 26 paychecks
+    expect(body.gross).toBeCloseTo(2000 * 26, 2);                    // $52,000
+
+    // Annual benefits: employee flat fee + 3 dependants
+    const annualBenefits = 1000 + 3 * 500;                          // $2,500
+
+    // Per-paycheck deduction: annual benefits spread over 26 paychecks
+    expect(body.benefitsCost).toBeCloseTo(annualBenefits / 26, 2);  // ≈ $96.15
+
+    // Net per paycheck: salary minus deduction
+    expect(body.net).toBeCloseTo(2000 - annualBenefits / 26, 2);    // ≈ $1,903.85
+
+    // Sanity: all four values are internally consistent
+    expect(body.salary + body.gross + body.benefitsCost + body.net).toBeGreaterThan(0);
+    expect(body.net).toBeLessThan(body.salary);
+    expect(body.gross).toBeGreaterThan(body.salary);
+  });
+});
+
 test.describe('DELETE /api/Employees/:id', () => {
   test('deletes employee and returns 404 after', async ({ request }) => {
     const { id } = await (await createEmployee(request, { firstName: 'Del', lastName: 'Me' })).json();
