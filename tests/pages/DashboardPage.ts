@@ -1,5 +1,6 @@
 import { Page, Locator } from '@playwright/test';
 
+// Table column indices: id=0, firstName=1, lastName=2, dependants=3, salary=4, gross=5, benefitsCost=6, net=7
 const Col = { salary: 4, gross: 5, benefitsCost: 6, net: 7 } as const;
 
 export class DashboardPage {
@@ -41,6 +42,7 @@ export class DashboardPage {
     const cells = this.rowFor(firstName, lastName).locator('td');
     return {
       salary:       await cells.nth(Col.salary).textContent(),
+      gross:        await cells.nth(Col.gross).textContent(),
       benefitsCost: await cells.nth(Col.benefitsCost).textContent(),
       net:          await cells.nth(Col.net).textContent(),
     };

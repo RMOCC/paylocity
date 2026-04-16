@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { BENEFITS, calculateBenefitsCost, calculateNet } from '../helpers/constants';
+import { BENEFITS, calculateBenefitsCost, calculateGross, calculateNet } from '../helpers/constants';
 import { createEmployee, deleteEmployee, authHeaders, API_URL } from '../helpers/api';
 
 test.describe('Authentication', () => {
@@ -86,29 +86,46 @@ test.describe('POST /api/Employees', () => {
     expect(body.salary).toBeCloseTo(BENEFITS.salaryPerPaycheck, 2);
   });
 
-  test('calculates benefits cost for 0 dependants', async ({ request }) => {
-    const { body } = await create(request, { dependants: 0 });
-    expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(0), 2);
+  test('gross is salary × 26 paychecks', async ({ request }) => {
+    const { body } = await create(request);
+    expect(body.gross).toBeCloseTo(calculateGross(), 2); // 2000 × 26 = 52 000
   });
 
-  test('calculates benefits cost for 2 dependants', async ({ request }) => {
-    const { body } = await create(request, { dependants: 2 });
-    expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(2), 2);
-  });
+  // Combinations: 0, 1, 2, 32 dependants
+  for (const dependants of [0, 1, 2, 32]) {
+    test(`calculates benefitsCost and net for ${dependants} dependant(s)`, async ({ request }) => {
+      const { body } = await create(request, { dependants });
+      expect(body.benefitsCost).toBeCloseTo(calculateBenefitsCost(dependants), 2);
+      expect(body.net).toBeCloseTo(calculateNet(dependants), 2);
+    });
+  }
 
-  test('calculates net pay correctly', async ({ request }) => {
-    const { body } = await create(request, { dependants: 3 });
-    expect(body.net).toBeCloseTo(calculateNet(3), 2);
-  });
-
+  // Missing required fields
   test('returns 400 when firstName missing', async ({ request }) => {
-    const res = await createEmployee(request, { firstName: undefined, lastName: 'X', dependants: 0 });
-    expect(res.status()).toBe(400);
+    expect((await createEmployee(request, { firstName: undefined, lastName: 'X', dependants: 0 })).status()).toBe(400);
   });
 
   test('returns 400 when lastName missing', async ({ request }) => {
-    const res = await createEmployee(request, { lastName: undefined, firstName: 'X', dependants: 0 });
-    expect(res.status()).toBe(400);
+    expect((await createEmployee(request, { lastName: undefined, firstName: 'X', dependants: 0 })).status()).toBe(400);
+  });
+
+  // Invalid input
+  test('rejects whitespace-only firstName', async ({ request }) => {
+    expect((await createEmployee(request, { firstName: '   ' })).status()).toBe(400);
+  });
+
+  test('rejects whitespace-only lastName', async ({ request }) => {
+    expect((await createEmployee(request, { lastName: '   ' })).status()).toBe(400);
+  });
+
+  test('rejects float dependants', async ({ request }) => {
+    expect((await createEmployee(request, { dependants: 1.5 })).status()).toBe(400);
+  });
+
+  // Dependants boundary: 0 (min), 32 (max), 33 (first invalid), -1 (negative)
+  test('accepts 0 dependants (min)', async ({ request }) => {
+    const { res } = await create(request, { dependants: 0 });
+    expect(res.status()).toBe(200);
   });
 
   test('accepts 32 dependants (max)', async ({ request }) => {
@@ -124,8 +141,19 @@ test.describe('POST /api/Employees', () => {
     expect((await createEmployee(request, { dependants: -1 })).status()).toBe(400);
   });
 
+  // Name length boundary: 50 (valid), 51 (invalid)
+  test('accepts firstName exactly 50 chars', async ({ request }) => {
+    const { res } = await create(request, { firstName: 'A'.repeat(50) });
+    expect(res.status()).toBe(200);
+  });
+
   test('rejects firstName longer than 50 chars', async ({ request }) => {
     expect((await createEmployee(request, { firstName: 'A'.repeat(51) })).status()).toBe(400);
+  });
+
+  test('accepts lastName exactly 50 chars', async ({ request }) => {
+    const { res } = await create(request, { lastName: 'B'.repeat(50) });
+    expect(res.status()).toBe(200);
   });
 
   test('rejects lastName longer than 50 chars', async ({ request }) => {

@@ -13,8 +13,15 @@ export const BENEFITS = {
   dependantCostPerYear: 500,
 };
 
+// Annual gross salary (salary per paycheck × number of paychecks)
+export function calculateGross(): number {
+  return BENEFITS.salaryPerPaycheck * BENEFITS.paychecksPerYear;
+}
+
+// Per-paycheck deduction: annual costs (employee + dependants) spread over 26 paychecks
 export function calculateBenefitsCost(dependants: number): number {
-  return (BENEFITS.employeeCostPerYear + dependants * BENEFITS.dependantCostPerYear) / BENEFITS.paychecksPerYear;
+  const annualCost = BENEFITS.employeeCostPerYear + dependants * BENEFITS.dependantCostPerYear;
+  return annualCost / BENEFITS.paychecksPerYear;
 }
 
 export function calculateNet(dependants: number): number {
